@@ -1,0 +1,73 @@
+name: 🔍 Informe Diario Licitaciones IA & Ciber
+
+on:
+  # ⏰ Ejecución automática diaria a las 7:00 (hora España peninsular = 05:00 UTC)
+  schedule:
+    - cron: '0 5 * * 1-5'   # Lunes a Viernes a las 7:00 CET
+
+  # 🖱️ También se puede lanzar manualmente desde GitHub
+  workflow_dispatch:
+    inputs:
+      mes:
+        description: 'Mes específico (AAAAMM, ej: 202605). Vacío = mes actual'
+        required: false
+      solo_nuevas:
+        description: '¿Solo licitaciones nuevas?'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  buscar-licitaciones:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📂 Restaurar historial de licitaciones vistas
+        uses: actions/cache@v4
+        with:
+          path: licitaciones_vistas.json
+          key: licitaciones-vistas-${{ github.ref }}
+          restore-keys: |
+            licitaciones-vistas-
+
+      - name: 🔍 Ejecutar buscador
+        env:
+          # Email (configurados como GitHub Secrets)
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
+          # Opciones
+          MES: ${{ github.event.inputs.mes || '' }}
+          SOLO_NUEVAS: ${{ github.event.inputs.solo_nuevas || 'true' }}
+          ENVIAR_EMAIL: 'true'
+        run: python buscador.py
+
+      - name: 💾 Guardar historial actualizado
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: licitaciones_vistas.json
+          key: licitaciones-vistas-${{ github.ref }}-${{ github.run_id }}
+
+      - name: 📊 Subir informe como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-licitaciones-${{ github.run_id }}
+          path: output/
+          retention-days: 30
